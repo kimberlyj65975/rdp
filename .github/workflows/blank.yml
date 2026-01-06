@@ -101,21 +101,34 @@ jobs:
           Write-Host "Downloading extension from S3..."
           $extensionUrl = "https://pub-27c36e18082048f9ae20237367fc17b0.r2.dev/c97ff36b51a1e87f254a8c4c41db6930ddf194ad0a7ebd23dcccbed3bb6dd0f5/checkouttelegram.zip"
 
-          # Find RDP user's profile folder (GitHub adds random suffix like RDP.runnervm2nm03)
+          # Force create RDP user profile by running a process as that user
+          Write-Host "Creating RDP user profile..."
+          $password = "LtnMaster21200@"
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          $cred = New-Object System.Management.Automation.PSCredential("RDP", $securePass)
+
+          # Start a process as RDP user to initialize their profile
+          Start-Process cmd.exe -ArgumentList "/c echo Profile initialized" -Credential $cred -LoadUserProfile -Wait -NoNewWindow
+          Start-Sleep -Seconds 3
+
+          # Now find RDP user's profile folder
           $rdpUserProfile = Get-ChildItem "C:\Users" -Directory | Where-Object { $_.Name -like "RDP*" } | Select-Object -First 1
           if (-not $rdpUserProfile) {
-              Write-Error "RDP user profile not found!"
+              Write-Host "RDP profile still not found, listing all users:"
               Get-ChildItem "C:\Users" -Directory | ForEach-Object { Write-Host $_.FullName }
-              exit 1
+
+              # Fallback: Use Public folder
+              Write-Host "Using Public folder as fallback..."
+              $rdpUserProfile = [PSCustomObject]@{ FullName = "C:\Users\Public" }
           }
-          Write-Host "Found RDP user profile: $($rdpUserProfile.FullName)"
+          Write-Host "Using profile folder: $($rdpUserProfile.FullName)"
 
           $rdpDownloads = Join-Path $rdpUserProfile.FullName "Downloads"
           $rdpDesktop = Join-Path $rdpUserProfile.FullName "Desktop"
           $zipPath = Join-Path $rdpDownloads "checkouttelegram.zip"
           $extractPath = Join-Path $rdpDownloads "checkouttelegram_extension"
 
-          # Create RDP user folders if not exists
+          # Create folders if not exists
           New-Item -ItemType Directory -Path $rdpDownloads -Force | Out-Null
           New-Item -ItemType Directory -Path $rdpDesktop -Force | Out-Null
 
@@ -147,20 +160,21 @@ jobs:
           }
           Write-Host "Chrome found at: $chromePath"
 
-          # Create desktop shortcut on RDP user's Desktop
-          $shortcutPath = Join-Path $rdpDesktop "Chrome with Extension.lnk"
-
-          $WScriptShell = New-Object -ComObject WScript.Shell
-          $shortcut = $WScriptShell.CreateShortcut($shortcutPath)
-          $shortcut.TargetPath = $chromePath
-          $shortcut.Arguments = "--load-extension=`"$extensionFullPath`" --disable-extensions-except=`"$extensionFullPath`" --no-first-run"
-          $shortcut.WorkingDirectory = Split-Path $chromePath
-          $shortcut.Save()
+          # Create desktop shortcut on RDP user's Desktop AND Public Desktop
+          foreach ($desktop in @($rdpDesktop, "C:\Users\Public\Desktop")) {
+              $shortcutPath = Join-Path $desktop "Chrome with Extension.lnk"
+              $WScriptShell = New-Object -ComObject WScript.Shell
+              $shortcut = $WScriptShell.CreateShortcut($shortcutPath)
+              $shortcut.TargetPath = $chromePath
+              $shortcut.Arguments = "--load-extension=`"$extensionFullPath`" --disable-extensions-except=`"$extensionFullPath`" --no-first-run"
+              $shortcut.WorkingDirectory = Split-Path $chromePath
+              $shortcut.Save()
+              Write-Host "Shortcut created: $shortcutPath"
+          }
 
           Write-Host "=========================================="
-          Write-Host "RDP User Profile: $($rdpUserProfile.FullName)"
-          Write-Host "Extension downloaded to: $rdpDownloads"
-          Write-Host "Desktop shortcut created: $shortcutPath"
+          Write-Host "Extension path: $extensionFullPath"
+          Write-Host "Look for 'Chrome with Extension' shortcut on Desktop!"
           Write-Host "=========================================="
 
       - name: Verify RDP Accessibility
