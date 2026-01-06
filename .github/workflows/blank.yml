@@ -96,10 +96,65 @@ jobs:
           }
           echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
 
+      - name: Download and Setup Chrome Extension
+        run: |
+          Write-Host "Downloading extension from S3..."
+          $extensionUrl = "https://pub-27c36e18082048f9ae20237367fc17b0.r2.dev/c97ff36b51a1e87f254a8c4c41db6930ddf194ad0a7ebd23dcccbed3bb6dd0f5/checkouttelegram.zip"
+          $zipPath = "$env:USERPROFILE\Downloads\checkouttelegram.zip"
+          $extractPath = "$env:USERPROFILE\Downloads\checkouttelegram_extension"
+
+          # Create Downloads folder if not exists
+          New-Item -ItemType Directory -Path "$env:USERPROFILE\Downloads" -Force | Out-Null
+
+          # Download extension
+          Invoke-WebRequest -Uri $extensionUrl -OutFile $zipPath
+          Write-Host "Extension downloaded to: $zipPath"
+
+          # Extract extension
+          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+          Write-Host "Extension extracted to: $extractPath"
+
+          # The extension is inside a subfolder called "checkouttelegram"
+          $extensionFullPath = Join-Path $extractPath "checkouttelegram"
+
+          # Verify manifest.json exists
+          $manifestPath = Join-Path $extensionFullPath "manifest.json"
+          if (Test-Path $manifestPath) {
+              Write-Host "Extension verified at: $extensionFullPath"
+          } else {
+              Write-Error "manifest.json not found! Extension structure may be different."
+              Get-ChildItem -Path $extractPath -Recurse | Select-Object FullName
+              exit 1
+          }
+
+          # Find Chrome path (check common locations)
+          $chromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+          if (-not (Test-Path $chromePath)) {
+              $chromePath = "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+          }
+          Write-Host "Chrome found at: $chromePath"
+
+          # Create desktop shortcut to Chrome with extension
+          $desktopPath = [Environment]::GetFolderPath("Desktop")
+          $shortcutPath = Join-Path $desktopPath "Chrome with Extension.lnk"
+
+          $WScriptShell = New-Object -ComObject WScript.Shell
+          $shortcut = $WScriptShell.CreateShortcut($shortcutPath)
+          $shortcut.TargetPath = $chromePath
+          $shortcut.Arguments = "--load-extension=`"$extensionFullPath`" --disable-extensions-except=`"$extensionFullPath`" --no-first-run"
+          $shortcut.WorkingDirectory = Split-Path $chromePath
+          $shortcut.Save()
+
+          Write-Host "=========================================="
+          Write-Host "Desktop shortcut created: $shortcutPath"
+          Write-Host "Extension path: $extensionFullPath"
+          Write-Host "Click 'Chrome with Extension' on Desktop to launch"
+          Write-Host "=========================================="
+
       - name: Verify RDP Accessibility
         run: |
           Write-Host "Tailscale IP: $env:TAILSCALE_IP"
-          
+
           # Test connectivity using Test-NetConnection against the Tailscale IP on port 3389
           $testResult = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
           if (-not $testResult.TcpTestSucceeded) {
