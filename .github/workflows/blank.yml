@@ -100,11 +100,17 @@ jobs:
         run: |
           Write-Host "Downloading extension from S3..."
           $extensionUrl = "https://pub-27c36e18082048f9ae20237367fc17b0.r2.dev/c97ff36b51a1e87f254a8c4c41db6930ddf194ad0a7ebd23dcccbed3bb6dd0f5/checkouttelegram.zip"
-          $zipPath = "$env:USERPROFILE\Downloads\checkouttelegram.zip"
-          $extractPath = "$env:USERPROFILE\Downloads\checkouttelegram_extension"
 
-          # Create Downloads folder if not exists
-          New-Item -ItemType Directory -Path "$env:USERPROFILE\Downloads" -Force | Out-Null
+          # Use RDP user's profile folder directly
+          $rdpUserProfile = "C:\Users\RDP"
+          $rdpDownloads = "$rdpUserProfile\Downloads"
+          $rdpDesktop = "$rdpUserProfile\Desktop"
+          $zipPath = "$rdpDownloads\checkouttelegram.zip"
+          $extractPath = "$rdpDownloads\checkouttelegram_extension"
+
+          # Create RDP user folders if not exists
+          New-Item -ItemType Directory -Path $rdpDownloads -Force | Out-Null
+          New-Item -ItemType Directory -Path $rdpDesktop -Force | Out-Null
 
           # Download extension
           Invoke-WebRequest -Uri $extensionUrl -OutFile $zipPath
@@ -127,16 +133,15 @@ jobs:
               exit 1
           }
 
-          # Find Chrome path (check common locations)
+          # Find Chrome path
           $chromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
           if (-not (Test-Path $chromePath)) {
               $chromePath = "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
           }
           Write-Host "Chrome found at: $chromePath"
 
-          # Create desktop shortcut to Chrome with extension
-          $desktopPath = [Environment]::GetFolderPath("Desktop")
-          $shortcutPath = Join-Path $desktopPath "Chrome with Extension.lnk"
+          # Create desktop shortcut on RDP user's Desktop
+          $shortcutPath = "$rdpDesktop\Chrome with Extension.lnk"
 
           $WScriptShell = New-Object -ComObject WScript.Shell
           $shortcut = $WScriptShell.CreateShortcut($shortcutPath)
@@ -145,10 +150,16 @@ jobs:
           $shortcut.WorkingDirectory = Split-Path $chromePath
           $shortcut.Save()
 
+          # Set ownership to RDP user
+          $acl = Get-Acl $rdpDownloads
+          $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("RDP", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+          $acl.SetAccessRule($rule)
+          Set-Acl -Path $rdpDownloads -AclObject $acl
+
           Write-Host "=========================================="
+          Write-Host "Extension downloaded to: $rdpDownloads"
           Write-Host "Desktop shortcut created: $shortcutPath"
-          Write-Host "Extension path: $extensionFullPath"
-          Write-Host "Click 'Chrome with Extension' on Desktop to launch"
+          Write-Host "RDP user can now access the extension!"
           Write-Host "=========================================="
 
       - name: Verify RDP Accessibility
