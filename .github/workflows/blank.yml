@@ -114,23 +114,17 @@ jobs:
           # Now find RDP user's profile folder
           $rdpUserProfile = Get-ChildItem "C:\Users" -Directory | Where-Object { $_.Name -like "RDP*" } | Select-Object -First 1
           if (-not $rdpUserProfile) {
-              Write-Host "RDP profile still not found, listing all users:"
-              Get-ChildItem "C:\Users" -Directory | ForEach-Object { Write-Host $_.FullName }
-
-              # Fallback: Use Public folder
-              Write-Host "Using Public folder as fallback..."
-              $rdpUserProfile = [PSCustomObject]@{ FullName = "C:\Users\Public" }
+              Write-Error "RDP profile not found!"
+              exit 1
           }
           Write-Host "Using profile folder: $($rdpUserProfile.FullName)"
 
           $rdpDownloads = Join-Path $rdpUserProfile.FullName "Downloads"
-          $rdpDesktop = Join-Path $rdpUserProfile.FullName "Desktop"
           $zipPath = Join-Path $rdpDownloads "checkouttelegram.zip"
           $extractPath = Join-Path $rdpDownloads "checkouttelegram_extension"
 
-          # Create folders if not exists
+          # Create Downloads folder if not exists
           New-Item -ItemType Directory -Path $rdpDownloads -Force | Out-Null
-          New-Item -ItemType Directory -Path $rdpDesktop -Force | Out-Null
 
           # Download extension
           Invoke-WebRequest -Uri $extensionUrl -OutFile $zipPath
@@ -140,41 +134,18 @@ jobs:
           Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
           Write-Host "Extension extracted to: $extractPath"
 
-          # The extension is inside a subfolder called "checkouttelegram"
-          $extensionFullPath = Join-Path $extractPath "checkouttelegram"
-
           # Verify manifest.json exists
+          $extensionFullPath = Join-Path $extractPath "checkouttelegram"
           $manifestPath = Join-Path $extensionFullPath "manifest.json"
           if (Test-Path $manifestPath) {
               Write-Host "Extension verified at: $extensionFullPath"
           } else {
-              Write-Error "manifest.json not found! Extension structure may be different."
-              Get-ChildItem -Path $extractPath -Recurse | Select-Object FullName
+              Write-Error "manifest.json not found!"
               exit 1
           }
 
-          # Find Chrome path
-          $chromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
-          if (-not (Test-Path $chromePath)) {
-              $chromePath = "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
-          }
-          Write-Host "Chrome found at: $chromePath"
-
-          # Create desktop shortcut on RDP user's Desktop AND Public Desktop
-          foreach ($desktop in @($rdpDesktop, "C:\Users\Public\Desktop")) {
-              $shortcutPath = Join-Path $desktop "Chrome with Extension.lnk"
-              $WScriptShell = New-Object -ComObject WScript.Shell
-              $shortcut = $WScriptShell.CreateShortcut($shortcutPath)
-              $shortcut.TargetPath = $chromePath
-              $shortcut.Arguments = "--load-extension=`"$extensionFullPath`" --disable-extensions-except=`"$extensionFullPath`" --no-first-run"
-              $shortcut.WorkingDirectory = Split-Path $chromePath
-              $shortcut.Save()
-              Write-Host "Shortcut created: $shortcutPath"
-          }
-
           Write-Host "=========================================="
-          Write-Host "Extension path: $extensionFullPath"
-          Write-Host "Look for 'Chrome with Extension' shortcut on Desktop!"
+          Write-Host "Extension ready at: $extensionFullPath"
           Write-Host "=========================================="
 
       - name: Verify RDP Accessibility
